@@ -7,15 +7,22 @@
 // - agent 没有任何原生 NAPI 插件（ripgrep 是 WASM，其余纯 JS），可直接跑在 Electron 的 Node 上；
 // - Electron 41 内置 Node 24.x，与 zcode-cli 的目标运行时一致；
 // - 单平台体积从 ~180MB 降到 ~16MB，且同一份 JS 跨平台通用；
-// - app-server 命令路径不会加载 @zcode/tui，所以这里天然不打包 TUI。
+// - app-server 命令路径不会加载 @zcode/tui；TUI 由 stageTuiRuntimeForGlm 单独 stage 到
+//   glm/node_modules，供随包 CLI 在终端交互（`zcode` / `zcode tui`）时使用。
 //
 // 远端（SSH/WSL/Docker）没有 Electron，由 Source Server archive 自带目标 Node，互不影响。
 
 // 修复原因：bootstrap 清理旧插件 dist 时使用 rmSync，漏导入会在构建前抛出 ReferenceError。
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmod, cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  collectSeaTuiAssets,
+  seaTuiAssetPrefix,
+} from "../../../apps/zcode-cli/packages/cli/scripts/sea-tui-assets.mjs";
+import { normalizeTarget } from "../../../apps/zcode-cli/packages/cli/scripts/sea-targets.mjs";
 import { runCommand } from "../../../scripts/spawn-command.mjs";
 import { stageAgentBundle } from "./stage-agent-bundle.mjs";
 import {
@@ -420,6 +427,50 @@ async function stageBundle() {
   await stageAgentBundle({ repoRoot, platformKey });
 }
 
+// 修复原因：glm 打包只带 zcode.cjs 与官方插件目录，@zcode/tui 作为 SEA-only 资产从未随包
+// stage。随包 CLI（node resources/glm/zcode.cjs）在终端交互（`zcode` / `zcode tui`）时走
+// 非 SEA 路径动态 import("@zcode/tui")，找不到包直接 MODULE_NOT_FOUND（zai-org/feedback#51）。
+// 这里复用 SEA 的 TUI 资产收集器，把 TUI 及其运行时依赖（opentui native 按当前平台）stage 到
+// glm/node_modules，让随包 zcode.cjs 脱离仓库也能加载交互式 TUI。
+async function stageTuiRuntimeForGlm() {
+  console.log("[prepare:agent-bundle] building @zcode/tui runtime ...");
+  runCommand(
+    "pnpm",
+    ["--dir", resolve(repoRoot, "apps/zcode-cli"), "--filter", "@zcode/tui", "build"],
+    {
+      cwd: repoRoot,
+      env: pnpmRunEnv,
+    },
+  );
+
+  const target = normalizeTarget(platformKey);
+  const tuiStagingDirectory = resolve(glmDir, "..", "tui-staging");
+  mkdirSync(glmDir, { recursive: true });
+  try {
+    const { assets, manifest } = await collectSeaTuiAssets({
+      root: resolve(repoRoot, "apps/zcode-cli"),
+      stagingDirectory: tuiStagingDirectory,
+      target,
+    });
+    for (const file of manifest.files) {
+      const destination = resolve(glmDir, file.path);
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(assets[`${seaTuiAssetPrefix}${file.path}`], destination);
+      await chmod(destination, file.mode);
+    }
+  } finally {
+    await rm(tuiStagingDirectory, { recursive: true, force: true });
+  }
+
+  const stagedTuiPackage = resolve(glmDir, "node_modules", "@zcode", "tui", "package.json");
+  if (!existsSync(stagedTuiPackage)) {
+    throw new Error(`[prepare:agent-bundle] missing staged TUI runtime: ${stagedTuiPackage}`);
+  }
+  console.log(
+    `[prepare:agent-bundle] staged @zcode/tui runtime into ${resolve(glmDir, "node_modules")} (${target})`,
+  );
+}
+
 function stageOfficialPlugins() {
   for (const plugin of officialPluginPackages) {
     const sourceRoot = resolve(repoRoot, plugin.relativePath);
@@ -544,6 +595,7 @@ buildOfficialPluginRuntimes();
 await stageBundle();
 stageOfficialPlugins();
 stageBundledSkillPack();
+await stageTuiRuntimeForGlm();
 await stageBundledNpmRuntime();
 stageKoffiForCuaPlugin();
 stageSharpForNodeReplPlugin();

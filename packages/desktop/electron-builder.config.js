@@ -867,8 +867,16 @@ export default {
       // 桌面端内置的是 agent 的 JS bundle（glm/zcode.cjs，由 prepare:agent-bundle 生成），
       // Host 进程用 app 自带的 Electron Node runtime（ELECTRON_RUN_AS_NODE）执行 `zcode.cjs app-server --stdio`，
       // 不再随包内置独立 Node 二进制。远端 SSH/WSL 仍走原生二进制（无 Electron）。
+      // electron-builder 会跳过 from 根目录下的 node_modules（同上方 cua-helper 的根因），
+      // 而 glm/node_modules 现在携带 @zcode/tui 运行时（随包 CLI 终端交互 TUI 必需），
+      // 所以主树排除 node_modules 后必须单独映射这一份。
       from: `bundled-agents/${targetPlatform.key}/glm`,
       to: "glm",
+      filter: ["**/*", "!node_modules{,/**/*}", "!**/*.map"],
+    },
+    {
+      from: `bundled-agents/${targetPlatform.key}/glm/node_modules`,
+      to: "glm/node_modules",
       filter: ["**/*", "!**/*.map"],
     },
     {
