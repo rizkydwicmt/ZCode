@@ -1,0 +1,66 @@
+name: zcode-dist
+
+# 构建独立 zcode 发行包（scripts/build-zcode.mjs）：tarball + sha256 + install.sh + latest.json。
+# 手动触发（workflow_dispatch），产物在本 run 页面的 Artifacts 区下载。
+# Windows 暂不进矩阵：发行流水线当前面向 darwin/linux，后续按需要补 win-x64。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dist:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # darwin-arm64
+          - os: ubuntu-24.04 # linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: Install pinned pnpm
+        run: npm install -g pnpm@10.33.2
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bootstrap workspace
+        run: node scripts/bootstrap.mjs
+        env:
+          HUSKY: "0"
+          PNPM_CONFIG_CONFIRM_MODULES_PURGE: "false"
+          npm_config_confirm_modules_purge: "false"
+
+      - name: Build zcode distribution
+        # base-url 仅写入 install.sh 下载地址，CI 产物分发不依赖它。
+        run: node scripts/build-zcode.mjs --base-url "https://github.com/${{ github.repository }}/releases"
+
+      - name: Smoke test packaged CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf dist/zcode/releases/*/zcode-*.tar.gz -C "$RUNNER_TEMP"
+          node "$RUNNER_TEMP/zcode/agent/zcode.cjs" --version
+          node "$RUNNER_TEMP/zcode/bin/zcode.mjs" --version
+          # 回归守卫：随包 TUI 运行时必须完整（@zcode/tui + opentui native 平台包）。
+          test -f "$RUNNER_TEMP/zcode/agent/node_modules/@zcode/tui/package.json"
+          test -d "$RUNNER_TEMP/zcode/agent/node_modules/@mbears"
+
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-dist-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/zcode/releases/**/zcode-*.tar.gz
+            dist/zcode/releases/**/sha256.txt
+            dist/zcode/install.sh
+            dist/zcode/latest.json
