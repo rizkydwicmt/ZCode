@@ -39,6 +39,11 @@ jobs:
           PNPM_CONFIG_CONFIRM_MODULES_PURGE: "false"
           npm_config_confirm_modules_purge: "false"
 
+      - name: Build sea-prepare outputs
+        # build:sea:prepare builds @zcode/shared dist + all apps/zcode-cli packages
+        # (incl. @zcode/tui) — required by the TUI runtime staging inside build-zcode.
+        run: pnpm build:sea:prepare
+
       - name: Build zcode distribution
         # base-url 仅写入 install.sh 下载地址，CI 产物分发不依赖它。
         run: node scripts/build-zcode.mjs --base-url "https://github.com/${{ github.repository }}/releases"
