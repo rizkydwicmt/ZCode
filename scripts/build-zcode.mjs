@@ -11,6 +11,14 @@ import {
   stageTuiRuntime,
 } from "./zcode-distribution/assets.mjs";
 import { installScriptSource } from "./zcode-distribution/installer.mjs";
+import {
+  resolveSpawnRuntimeOptions,
+  quoteArgsForWindowsShell,
+} from "./spawn-command.mjs";
+import {
+  resolveTarArchiveArg,
+  toTarPosixPath,
+} from "./prebuilt-binary-extract.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const defaultOutDir = resolve(root, "dist", "zcode");
@@ -100,10 +108,16 @@ function commandText(command, args) {
 
 function run(command, args, options = {}) {
   console.log(`[zcode] ${commandText(command, args)}`);
-  const result = spawnSync(command, args, {
+  // On Windows bare `pnpm` is a cmd shim, so a direct spawnSync fails with
+  // ENOENT. Reuse the spawn-command.mjs convention: keep the command name
+  // (do NOT rewrite it to pnpm.cmd) and let the shell resolve the shim.
+  const runtimeOptions = resolveSpawnRuntimeOptions(command);
+  const spawnArgs = runtimeOptions.shell ? quoteArgsForWindowsShell(args) : args;
+  const result = spawnSync(command, spawnArgs, {
     cwd: root,
     stdio: "inherit",
     ...options,
+    ...runtimeOptions,
   });
   if (result.error) {
     throw new Error(`${commandText(command, args)} failed: ${result.error.message}`, {
@@ -226,7 +240,13 @@ async function createTarball({ packageParent, releaseDir, tarballName }) {
   await rm(tarball, {
     force: true,
   });
-  run("tar", ["-czf", tarball, "-C", packageParent, packageDirName]);
+  run("tar", [
+    "-czf",
+    resolveTarArchiveArg(tarball, root),
+    "-C",
+    toTarPosixPath(packageParent),
+    packageDirName,
+  ]);
   return tarball;
 }
 

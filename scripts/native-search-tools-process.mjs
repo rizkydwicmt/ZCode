@@ -2,6 +2,10 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  resolveTarArchiveArg,
+  toTarPosixPath,
+} from "./prebuilt-binary-extract.mjs";
 
 function formatCommand(command, args) {
   return [command, ...args].join(" ");
@@ -76,10 +80,24 @@ export function downloadAndExtractSources({ sources, workDir, env, quiet }) {
 
     const sourcePath = join(sourcesDir, source.id);
     mkdirSync(sourcePath, { recursive: true });
-    run("tar", ["-xzf", archivePath, "-C", sourcePath, "--strip-components=1"], {
-      env,
-      quiet,
-    });
+    // Windows GNU tar (Git Bash) parses the drive-letter colon of an absolute
+    // `C:/...` archive path as a remote host. Relative-ize the archive against
+    // the tar cwd and posix-ify the extract dir, matching the existing helpers
+    // in prebuilt-binary-extract.mjs (no effect on bsdtar or Linux/macOS CI).
+    run(
+      "tar",
+      [
+        "-xzf",
+        resolveTarArchiveArg(archivePath, process.cwd()),
+        "-C",
+        toTarPosixPath(sourcePath),
+        "--strip-components=1",
+      ],
+      {
+        env,
+        quiet,
+      },
+    );
     sourcePaths[source.id] = sourcePath;
   }
 

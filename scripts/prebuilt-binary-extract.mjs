@@ -16,11 +16,11 @@ import { runCommand } from "./spawn-command.mjs";
 // Bugfix: Windows GNU tar（Git Bash）会把绝对路径里的盘符冒号（C:）当成远程主机名，
 // 反斜杠路径也会被 MSYS 参数转换破坏。tar 参数统一转正斜杠，归档路径优先改用
 // 相对 cwd 的形式避开盘符冒号；对 bsdtar 与 Linux/macOS CI 无影响。
-function toTarPosixPath(pathValue) {
+export function toTarPosixPath(pathValue) {
   return pathValue.replaceAll("\\", "/");
 }
 
-function resolveTarArchiveArg(archivePath, cwd) {
+export function resolveTarArchiveArg(archivePath, cwd) {
   if (process.platform === "win32") {
     try {
       const relativeArchivePath = relative(cwd, archivePath);
