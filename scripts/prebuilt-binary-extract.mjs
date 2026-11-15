@@ -39,6 +39,22 @@ export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cw
   mkdirSync(extractDir, { recursive: true });
   if (archiveExt === "zip") {
     if (process.platform === "win32") {
+      // Windows 10+ ships bsdtar (System32 tar.exe), which extracts zip archives.
+      // Prefer it: on GitHub's newer Windows runner images `powershell.exe`
+      // resolves to pwsh 7, whose Microsoft.PowerShell.Archive module fails with
+      // "Cannot find an overload for ExtractToDirectory and the argument count: 3"
+      // (see zai-org/feedback#1523).
+      try {
+        const zipCwd = cwd ?? process.cwd();
+        runCommand(
+          "tar",
+          ["-xf", resolveTarArchiveArg(archivePath, zipCwd), "-C", toTarPosixPath(extractDir)],
+          { cwd: zipCwd },
+        );
+        return;
+      } catch {
+        // No bsdtar usable on PATH; fall through to Expand-Archive.
+      }
       runCommand("powershell.exe", [
         "-NoProfile",
         "-NonInteractive",
