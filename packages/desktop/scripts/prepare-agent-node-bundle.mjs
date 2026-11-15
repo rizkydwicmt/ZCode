@@ -433,10 +433,19 @@ async function stageBundle() {
 // 这里复用 SEA 的 TUI 资产收集器，把 TUI 及其运行时依赖（opentui native 按当前平台）stage 到
 // glm/node_modules，让随包 zcode.cjs 脱离仓库也能加载交互式 TUI。
 async function stageTuiRuntimeForGlm() {
-  console.log("[prepare:agent-bundle] building @zcode/tui runtime ...");
+  // The TUI runtime closure (packages/shared, session-control, model-option-map,
+  // tui, …) is normally produced by build:sea:prepare, which runs after bootstrap.
+  // On a fresh checkout prepare:agent-bundle runs during bootstrap, before that,
+  // so build the closure here exactly like sea:prepare's first two steps —
+  // collectSeaTuiAssets requires every workspace package in the closure to have dist/.
+  console.log("[prepare:agent-bundle] building @zcode/tui runtime closure ...");
+  runCommand("pnpm", ["exec", "tsc", "-b", "packages/shared", "--force"], {
+    cwd: repoRoot,
+    env: pnpmRunEnv,
+  });
   runCommand(
     "pnpm",
-    ["--dir", resolve(repoRoot, "apps/zcode-cli"), "--filter", "@zcode/tui", "build"],
+    ["--filter", "{./apps/zcode-cli/packages/*}...", "--filter", "!@zcode/cli", "-r", "build"],
     {
       cwd: repoRoot,
       env: pnpmRunEnv,

@@ -35,17 +35,19 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build sea-prepare outputs
+        # Runs BEFORE bootstrap (zai-org/feedback#1523 #3): on a fresh checkout the
+        # desktop runtime-assets prep inside bootstrap consumes @zcode/shared dist
+        # output that only build:sea:prepare produces. It also builds the whole
+        # apps/zcode-cli workspace (incl. @zcode/tui) needed by TUI runtime staging.
+        run: pnpm build:sea:prepare
+
       - name: Bootstrap workspace
         run: node scripts/bootstrap.mjs
         env:
           HUSKY: "0"
           PNPM_CONFIG_CONFIRM_MODULES_PURGE: "false"
           npm_config_confirm_modules_purge: "false"
-
-      - name: Build sea-prepare outputs
-        # build:sea:prepare builds @zcode/shared dist + all apps/zcode-cli packages
-        # (incl. @zcode/tui) — required by the TUI runtime staging inside build-zcode.
-        run: pnpm build:sea:prepare
 
       - name: Build zcode distribution
         # base-url 仅写入 install.sh 下载地址，CI 产物分发不依赖它。
