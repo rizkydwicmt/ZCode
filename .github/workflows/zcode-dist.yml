@@ -18,7 +18,8 @@ jobs:
         include:
           - os: macos-latest # darwin-arm64
           - os: ubuntu-latest # linux-x64
-          - os: windows-latest # win-x64
+          - os: windows-2025 # win-x64, pinned: windows-latest migrated to the VS2026 image
+            # and build-windows-runtime-host.mjs hardcodes the "Visual Studio 17 2022" CMake generator.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
