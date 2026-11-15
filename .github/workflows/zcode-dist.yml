@@ -57,12 +57,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar -xzf dist/zcode/releases/*/zcode-*.tar.gz -C "$RUNNER_TEMP"
-          node "$RUNNER_TEMP/zcode/agent/zcode.cjs" --version
-          node "$RUNNER_TEMP/zcode/bin/zcode.mjs" --version
+          # All paths after the cd are relative: GNU tar (Git Bash) parses the
+          # drive-letter colon of Windows-style absolute paths as a remote host.
+          cd dist/zcode
+          mkdir -p smoke && cd smoke
+          tar -xzf ../releases/*/zcode-*.tar.gz
+          node zcode/agent/zcode.cjs --version
+          node zcode/bin/zcode.mjs --version
           # 回归守卫：随包 TUI 运行时必须完整（@zcode/tui + opentui native 平台包）。
-          test -f "$RUNNER_TEMP/zcode/agent/node_modules/@zcode/tui/package.json"
-          test -d "$RUNNER_TEMP/zcode/agent/node_modules/@mbears"
+          test -f zcode/agent/node_modules/@zcode/tui/package.json
+          test -d zcode/agent/node_modules/@mbears
 
       - name: Upload distribution artifact
         uses: actions/upload-artifact@v4
